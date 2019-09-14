@@ -1,7 +1,4 @@
 node_modules
-travis
-docs
+target
+package-lock.json
 .git
-.jhipster
-.vscode
-**/templates/**/
