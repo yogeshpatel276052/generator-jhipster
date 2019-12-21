@@ -620,9 +620,10 @@ module.exports = class extends PrivateBase {
      *
      * @param {string} id - id of the repository
      * @param {string} url - url of the repository
+     * @param  {string} other - (optional) explicit other thing: name, releases, snapshots, ...
      */
-    addMavenRepository(id, url) {
-        this.needleApi.serverMaven.addRepository(id, url);
+    addMavenRepository(id, url, other = '') {
+        this.needleApi.serverMaven.addRepository(id, url, other);
     }
 
     /**
@@ -692,6 +693,18 @@ module.exports = class extends PrivateBase {
      */
     addMavenPlugin(groupId, artifactId, version, other) {
         this.needleApi.serverMaven.addPlugin(groupId, artifactId, version, other);
+    }
+
+    /**
+     * Add a new Maven plugin management.
+     *
+     * @param {string} groupId - plugin groupId
+     * @param {string} artifactId - plugin artifactId
+     * @param {string} version - explicit plugin version number
+     * @param {string} other - explicit other thing: executions, configuration...
+     */
+    addMavenPluginManagement(groupId, artifactId, version, other) {
+        this.needleApi.serverMaven.addPluginManagement(groupId, artifactId, version, other);
     }
 
     /**
@@ -795,7 +808,21 @@ module.exports = class extends PrivateBase {
      * Generate a date to be used by Liquibase changelogs.
      */
     dateFormatForLiquibase() {
-        const now = new Date();
+        let now = new Date();
+        // Run reproducible timestamp when regenerating the project with with-entities option.
+        if (this.options.withEntities || this.options.creationTimestamp) {
+            if (this.configOptions.lastLiquibaseTimestamp) {
+                // Counter already started.
+                now = this.configOptions.lastLiquibaseTimestamp;
+            } else {
+                // Create a new counter
+                const creationTimestamp = this.parseCreationTimestamp() || this.config.get('creationTimestamp');
+                now = creationTimestamp ? new Date(creationTimestamp) : now;
+            }
+            now.setMinutes(now.getMinutes() + 1);
+            this.configOptions.lastLiquibaseTimestamp = now;
+        }
+
         const nowUTC = new Date(
             now.getUTCFullYear(),
             now.getUTCMonth(),
@@ -863,8 +890,7 @@ module.exports = class extends PrivateBase {
                         /(,[\s]*(resolve):[\s]*[{][\s]*(translatePartialLoader)['a-zA-Z0-9$,(){.<%=\->;\s:[\]]*(;[\s]*\}\][\s]*\}))/, // ng1 resolve block
                         /([\s]import\s\{\s?JhiLanguageService\s?\}\sfrom\s["|']ng-jhipster["|'];)/, // ng2 import jhiLanguageService
                         /(,?\s?JhiLanguageService,?\s?)/, // ng2 import jhiLanguageService
-                        /(private\s[a-zA-Z0-9]*(L|l)anguageService\s?:\s?JhiLanguageService\s?,*[\s]*)/, // ng2 jhiLanguageService constructor argument
-                        /(this\.[a-zA-Z0-9]*(L|l)anguageService\.setLocations\(\[['"a-zA-Z0-9\-_,\s]+\]\);[\s]*)/ // jhiLanguageService invocations
+                        /(private\s[a-zA-Z0-9]*(L|l)anguageService\s?:\s?JhiLanguageService\s?,*[\s]*)/ // ng2 jhiLanguageService constructor argument
                     ]
                         .map(r => r.source)
                         .join('|'),
@@ -1156,6 +1182,7 @@ module.exports = class extends PrivateBase {
         context.skipCheckLengthOfIdentifier = context.fileData.skipCheckLengthOfIdentifier || context.skipCheckLengthOfIdentifier;
         context.jhiTablePrefix = this.getTableName(context.jhiPrefix);
         context.skipClient = context.fileData.skipClient || context.skipClient;
+        context.readOnly = context.fileData.readOnly || false;
         this.copyFilteringFlag(context.fileData, context, context);
         if (_.isUndefined(context.entityTableName)) {
             this.warning(`entityTableName is missing in .jhipster/${context.name}.json, using entity name as fallback`);
@@ -1644,19 +1671,7 @@ module.exports = class extends PrivateBase {
      * @param {string} baseName of application
      */
     getHipster(baseName = this.baseName) {
-        let hash = 0;
-        let i;
-        let chr;
-
-        for (i = 0; i < baseName.length; i++) {
-            chr = baseName.charCodeAt(i);
-            hash = (hash << 5) - hash + chr; // eslint-disable-line no-bitwise
-            hash |= 0; // eslint-disable-line no-bitwise
-        }
-
-        if (hash < 0) {
-            hash *= -1;
-        }
+        const hash = jhipsterUtils.stringHashCode(baseName);
 
         switch (hash % 4) {
             case 0:
@@ -1784,6 +1799,7 @@ module.exports = class extends PrivateBase {
      * @param {String} profile - dev | prod
      * @param {Boolean} buildWar - build a war instead of a jar
      * @param {Function} cb - callback when build is complete
+     * @returns {object} the command line and its result
      */
     buildApplication(buildTool, profile, buildWar, cb) {
         let buildCmd = 'mvnw -ntp verify -DskipTests=true -B';
@@ -1804,11 +1820,37 @@ module.exports = class extends PrivateBase {
             buildCmd = `./${buildCmd}`;
         }
         buildCmd += ` -P${profile}`;
-        const child = {};
-        child.stdout = exec(buildCmd, { maxBuffer: 1024 * 10000 }, cb).stdout;
-        child.buildCmd = buildCmd;
+        return {
+            stdout: exec(buildCmd, { maxBuffer: 1024 * 10000 }, cb).stdout,
+            buildCmd
+        };
+    }
 
-        return child;
+    /**
+     * run a command using the configured Java build tool.
+     *
+     * @param {String} buildTool - maven | gradle
+     * @param {String} profile - dev | prod
+     * @param {String} command - the command (goal/task) to run
+     * @param {Function} cb - callback when build is complete
+     * @returns {object} the command line and its result
+     */
+    runJavaBuildCommand(buildTool, profile, command, cb) {
+        let buildCmd = `mvnw -ntp -DskipTests=true -B ${command}`;
+
+        if (buildTool === 'gradle') {
+            buildCmd = `gradlew -x ${command}`;
+        }
+
+        if (os.platform() !== 'win32') {
+            buildCmd = `./${buildCmd}`;
+        }
+        buildCmd += ` -P${profile}`;
+        this.log(`Running command: '${chalk.bold(buildCmd)}'`);
+        return {
+            stdout: exec(buildCmd, { maxBuffer: 1024 * 10000 }, cb).stdout,
+            buildCmd
+        };
     }
 
     /**
@@ -1875,6 +1917,10 @@ module.exports = class extends PrivateBase {
         }
         this.debug(`Time taken to write files: ${new Date() - startTime}ms`);
         return filesOut;
+    }
+
+    setupAppOptions(generator, context = generator, dest = context) {
+        this.setupSharedOptions(generator, context, dest);
     }
 
     /**

@@ -27,6 +27,7 @@ const SUB_GENERATORS = require('./commands');
 
 const CLI_NAME = 'jhipster';
 const GENERATOR_NAME = 'generator-jhipster';
+
 const debug = function(msg) {
     if (this.debugEnabled) {
         console.log(`${chalk.blue('DEBUG!')}  ${msg}`);

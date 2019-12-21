@@ -181,7 +181,7 @@ function askForServerSideOpts(meta) {
                     value: 'couchbase',
                     name: 'Couchbase'
                 });
-                if (!reactive) {
+                if (!reactive && applicationType !== 'uaa') {
                     opts.push({
                         value: 'no',
                         name: 'No database'
@@ -246,11 +246,15 @@ function askForServerSideOpts(meta) {
                         'Yes, with Memcached (distributed cache) - Warning, when using an SQL database, this will disable the Hibernate 2nd level cache!'
                 },
                 {
+                    value: 'redis',
+                    name: 'Yes, with the Redis implementation (single server)'
+                },
+                {
                     value: 'no',
                     name: 'No - Warning, when using an SQL database, this will disable the Hibernate 2nd level cache!'
                 }
             ],
-            default: applicationType === 'microservice' || applicationType === 'uaa' ? 1 : 0
+            default: applicationType === 'microservice' || applicationType === 'uaa' ? 2 : 0
         },
         {
             when: response =>
@@ -367,11 +371,11 @@ function askForOptionalItems(meta) {
                 value: 'websocket:spring-websocket'
             });
         }
-        choices.push({
-            name: 'Asynchronous messages using Apache Kafka',
-            value: 'messageBroker:kafka'
-        });
     }
+    choices.push({
+        name: 'Asynchronous messages using Apache Kafka',
+        value: 'messageBroker:kafka'
+    });
     choices.push({
         name: 'API first development using OpenAPI-generator',
         value: 'enableSwaggerCodegen:true'

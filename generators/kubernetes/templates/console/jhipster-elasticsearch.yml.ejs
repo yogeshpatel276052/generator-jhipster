@@ -44,6 +44,10 @@ metadata:
 spec:
   serviceName: jhipster-elasticsearch-master
   replicas: 1
+  selector:
+    matchLabels:
+      component: jhipster-elasticsearch
+      role: master
   template:
     metadata:
       labels:
@@ -174,6 +178,10 @@ spec:
       - name: config
         configMap:
           name: es-config
+<%_ if (!kubernetesUseDynamicStorage) { _%>
+      - name: storage
+        emptyDir: {}
+<%_ } else { _%>
   volumeClaimTemplates:
   - metadata:
       name: storage
@@ -182,6 +190,10 @@ spec:
       resources:
         requests:
           storage: 1Gi
+  <%_ if (kubernetesStorageClassName) { _%>
+      storageClassName: <%= kubernetesStorageClassName %>
+  <%_ } _%>
+<%_ } _%>
 ---
 apiVersion: <%= KUBERNETES_STATEFULSET_API_VERSION %>
 kind: StatefulSet
@@ -194,6 +206,10 @@ metadata:
 spec:
   serviceName: jhipster-elasticsearch-data
   replicas: 1
+  selector:
+    matchLabels:
+      component: jhipster-elasticsearch
+      role: data
   template:
     metadata:
       labels:
